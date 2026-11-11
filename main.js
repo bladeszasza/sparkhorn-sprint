@@ -980,7 +980,7 @@
   function updateSelectedUnicornLabel() {
     if (!selectedUnicornLabel) return;
     var labelIndex = hoveredPreviewIndex >= 0 ? hoveredPreviewIndex : selectedUnicornIndex;
-    var prefix = hoveredPreviewIndex >= 0 ? 'Click to ride ' : 'Selected ride: ';
+    var prefix = hoveredPreviewIndex >= 0 ? 'Koppints, hogy ezzel fuss: ' : 'Kiválasztott unikornis: ';
     selectedUnicornLabel.textContent = prefix + getUnicornPalette(labelIndex).name;
   }
 
