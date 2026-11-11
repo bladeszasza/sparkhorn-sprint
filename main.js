@@ -645,6 +645,16 @@
         g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.10);
         osc.start();
         osc.stop(ctx.currentTime + 0.10);
+      } else if (type === 'win') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(523, ctx.currentTime);
+        osc.frequency.setValueAtTime(659, ctx.currentTime + 0.12);
+        osc.frequency.setValueAtTime(784, ctx.currentTime + 0.24);
+        osc.frequency.setValueAtTime(1047, ctx.currentTime + 0.36);
+        g.gain.setValueAtTime(0.12, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.6);
       } else if (type === 'gameOver') {
         osc.type = 'square';
         osc.frequency.setValueAtTime(220, ctx.currentTime);
@@ -783,7 +793,7 @@
   }
 
   // ===================== SCORING =====================
-  var HISCORE_KEY = 'sparkhorn_sprint_hiscore';
+  var HISCORE_KEY = 'sparkhorn_sprint_best_stars';
   var SELECTED_UNICORN_KEY = 'sparkhorn_sprint_selected_unicorn';
 
   function loadStoredUnicornIndex() {
@@ -1599,7 +1609,7 @@
   function triggerGameOver() {
     gameState = STATE.GAME_OVER;
     setHoveredPreview(-1);
-    playSFX('gameOver');
+    playSFX('win');
     updateMusicForState();
     hero.visible = true;
     if (score > highScore) {
@@ -1707,7 +1717,6 @@
     scrollSpeed = Math.min(SCROLL.max, SCROLL.initial + SCROLL.rampRate * elapsedTime);
     var scrollDelta = scrollSpeed * dt;
     // Score: 1 point per unit scrolled
-    score += scrollDelta;
 
     // Lane snap - hero X follows lane, hero Z = 0 ALWAYS
     var targetX = laneX(playerLane);
@@ -1797,7 +1806,7 @@
       var cz = 0;
       if (aabbOverlap(cx, cy, cz, HERO_HALF.x, HERO_HALF.y, HERO_HALF.z,
         col.position.x, col.position.y, col.position.z, COL_HALF.x, COL_HALF.y, COL_HALF.z)) {
-        score += 10;
+        score += 1;
         playSFX('collectible');
         scene.remove(col);
         collectibles.splice(j, 1);
