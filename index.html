@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sparkhorn Sprint</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- HUD -->
+<div id="hud">
+  <div id="hud-left">
+    <div id="title">SPARKHORN SPRINT</div>
+  </div>
+  <div id="hud-right">
+    <div id="score-display">Score: 0</div>
+    <div id="hiscore-display">Best: 0</div>
+  </div>
+</div>
+<div id="start-overlay">
+  <div id="start-content">
+    <div id="start-title">SPARKHORN SPRINT</div>
+    <div id="start-instructions">Click a galloping unicorn to choose your ride &bull; Arrow keys or A/D to move &bull; SPACE to jump</div>
+    <button id="start-btn">PLAY</button>
+  </div>
+  <div id="selected-unicorn-label"></div>
+</div>
+<div id="gameover-overlay" style="display:none;">
+  <div id="gameover-text">CLASS FAILED</div>
+  <div id="final-score"></div>
+  <div id="gameover-hint">Returning to showcase...</div>
+</div>
+<div id="fade" style="display:none;"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="textures_data.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
