@@ -1,5 +1,6 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; }
+html, body { height: 100%; }
+body { touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; }
 canvas { display: block; position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
 
 #hud {
@@ -91,8 +92,8 @@ canvas { display: block; position: fixed; top: 0; left: 0; width: 100%; height: 
   z-index: 20; pointer-events: none;
 }
 #gameover-text {
-  font-size: 48px; font-weight: 900; color: #ff4060;
-  text-shadow: 0 0 16px #ff0040, 0 0 32px #a00020;
+  font-size: 48px; font-weight: 900; color: #ffd85a;
+  text-shadow: 0 0 16px #ffb300, 0 0 32px #d084ff;
   letter-spacing: 6px;
 }
 #final-score {

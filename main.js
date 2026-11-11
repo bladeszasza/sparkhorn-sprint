@@ -596,8 +596,11 @@
     collectibleHalf: { x: 0.60, y: 0.60, z: 0.60 }
   };
 
-  var SCROLL = { initial: 6, max: 18, rampRate: 0.5 };
-  var SPAWN = { aheadDistance: 40, despawnBehind: 5, initialInterval: 1.4, minInterval: 0.4, intervalDecay: 0.05 };
+  // Gentle difficulty for young children: slow top speed, generous spacing.
+  var SCROLL = { initial: 5, max: 9, rampRate: 0.06 };
+  var SPAWN = { aheadDistance: 40, despawnBehind: 5, initialInterval: 2.0, minInterval: 1.3, intervalDecay: 0.02 };
+  var ROUND_SECONDS = 90;      // a round ends kindly after this long
+  var STUMBLE_SECONDS = 1.4;   // short invulnerability after a bump
   var TILE = { count: 25, depth: 2.0 };
   var VIEW = { gameplayCameraY: 3.05, gameplayCameraZ: 6.15, gameplayLookY: 1.06, gameplayLookZ: -4.2, showcaseHeroY: 0.68 };
 
@@ -799,7 +802,8 @@
 
   var selectedUnicornIndex = loadStoredUnicornIndex();
   var score = 0;
-  var highScore = parseInt(localStorage.getItem(HISCORE_KEY) || '0', 10);
+  var highScore = 0;
+  try { highScore = parseInt(localStorage.getItem(HISCORE_KEY) || '0', 10) || 0; } catch (err) { highScore = 0; }
 
   // ===================== STATE MACHINE =====================
   var STATE = { SHOWCASE: 'showcase', PLAYING: 'playing', GAME_OVER: 'game_over' };
@@ -817,7 +821,7 @@
   var finalScoreEl = document.getElementById('final-score');
   var fadeEl = document.getElementById('fade');
 
-  hiScoreDisplay.textContent = 'Best: ' + highScore;
+  hiScoreDisplay.textContent = 'Legjobb: ' + highScore;
 
   // ===================== RENDERER, SCENE, CAMERA =====================
   var GAMEPLAY_BG_COLOR = 0xbfefff;
@@ -1411,6 +1415,8 @@
   var gameOverTimer = 0;
   var gameOverPhase = 0; // 0=not, 1=waiting, 2=fading
   var fadeTimer = 0;
+  var isStarting = false;     // blocks double start during the fade
+  var stumbleTimer = 0;       // >0 while briefly invulnerable after a bump
 
   // ===================== INPUT (discrete lane toggle) =====================
   window.addEventListener('keydown', function (e) {
@@ -1434,11 +1440,48 @@
   });
 
   if (startBtn) {
-    startBtn.textContent = 'PLAY';
+    startBtn.textContent = 'JÁTÉK';
     startBtn.addEventListener('click', function () {
       if (gameState === STATE.SHOWCASE) startGame();
     });
   }
+
+  // ===================== TOUCH / PEN CONTROLS =====================
+  // Tap left/right third = change lane, tap middle = jump,
+  // swipe left/right = change lane, swipe up = jump. Works for finger and Apple Pencil.
+  var touchStart = null;
+  renderer.domElement.addEventListener('pointerdown', function (event) {
+    if (gameState !== STATE.PLAYING) return;
+    event.preventDefault();
+    getAudioCtx();
+    touchStart = { id: event.pointerId, x: event.clientX, y: event.clientY, handled: false };
+  });
+  renderer.domElement.addEventListener('pointermove', function (event) {
+    if (!touchStart || touchStart.id !== event.pointerId || touchStart.handled) return;
+    if (gameState !== STATE.PLAYING) return;
+    var dx = event.clientX - touchStart.x;
+    var dy = event.clientY - touchStart.y;
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+      touchStart.handled = true;
+      if (dx < 0 && playerLane > 0) playerLane--;
+      else if (dx > 0 && playerLane < 2) playerLane++;
+    } else if (dy < -40 && Math.abs(dy) > Math.abs(dx)) {
+      touchStart.handled = true;
+      tryJump();
+    }
+  });
+  function endTouch(event) {
+    if (!touchStart || touchStart.id !== event.pointerId) return;
+    var start = touchStart;
+    touchStart = null;
+    if (start.handled || gameState !== STATE.PLAYING || event.type === 'pointercancel') return;
+    var third = window.innerWidth / 3;
+    if (start.x < third) { if (playerLane > 0) playerLane--; }
+    else if (start.x > third * 2) { if (playerLane < 2) playerLane++; }
+    else tryJump();
+  }
+  renderer.domElement.addEventListener('pointerup', endTouch);
+  renderer.domElement.addEventListener('pointercancel', endTouch);
 
   // ===================== GAME FLOW =====================
   function tryJump() {
@@ -1450,6 +1493,8 @@
   }
 
   function startGame() {
+    if (isStarting) return;
+    isStarting = true;
     getAudioCtx();
     ensureBackgroundMusicStarted();
     setHoveredPreview(-1);
@@ -1472,7 +1517,10 @@
       clearEntities();
       startOverlay.style.display = 'none';
       gameoverOverlay.style.display = 'none';
-      scoreDisplay.textContent = 'Score: 0';
+      scoreDisplay.textContent = 'Csillagok: 0';
+      stumbleTimer = 0;
+      hero.visible = true;
+      isStarting = false;
       // Position hero for running - Z is ALWAYS 0
       hero.position.set(laneX(1), PHYSICS.playerGroundY, 0);
       hero.scale.set(1, 1, 1);
@@ -1533,7 +1581,9 @@
     setShowcaseLighting();
     updateMusicForState();
     startOverlay.style.display = 'flex';
-    if (startBtn) startBtn.textContent = 'PLAY';
+    if (startBtn) startBtn.textContent = 'JÁTÉK';
+    isStarting = false;
+    hero.visible = true;
     gameoverOverlay.style.display = 'none';
     // Hide gameplay stuff
     for (var i = 0; i < tiles.length; i++) tiles[i].visible = false;
@@ -1551,12 +1601,13 @@
     setHoveredPreview(-1);
     playSFX('gameOver');
     updateMusicForState();
+    hero.visible = true;
     if (score > highScore) {
       highScore = Math.floor(score);
-      localStorage.setItem(HISCORE_KEY, '' + highScore);
+      try { localStorage.setItem(HISCORE_KEY, '' + highScore); } catch (err) {}
     }
-    hiScoreDisplay.textContent = 'Best: ' + highScore;
-    finalScoreEl.textContent = 'Score: ' + Math.floor(score);
+    hiScoreDisplay.textContent = 'Legjobb: ' + highScore;
+    finalScoreEl.textContent = '⭐ ' + Math.floor(score) + ' csillag';
     gameoverOverlay.style.display = 'flex';
     gameOverPhase = 1;
     gameOverTimer = 0;
@@ -1602,8 +1653,7 @@
       spawnObstacle(gl, z, false);
       var al = getDiffLane(gl);
       spawnObstacle(al, z, true);
-      var col = getDiffLane(gl);
-      if (col === al) col = getDiffLane(al);
+      var col = 3 - gl - al; // the one remaining free lane
       spawnCollectibleAt(col, z);
     }
   }
@@ -1720,8 +1770,15 @@
           OBS_HALF.z
         )
       ) {
-        triggerGameOver();
-        return;
+        if (stumbleTimer <= 0) {
+          // Gentle bump: no game over. Brief blink + hop, keep running.
+          stumbleTimer = STUMBLE_SECONDS;
+          playSFX('jump');
+          if (isGrounded) { playerVelY = 6; isGrounded = false; }
+        }
+        scene.remove(ob);
+        obstacles.splice(i, 1);
+        continue;
       }
     }
 
@@ -1779,7 +1836,20 @@
     // Phase 6/8/9: enforce correct spawn/despawn and never move hero.z.
     // (hero.z already stays at 0 in this implementation)
 
-    scoreDisplay.textContent = 'Score: ' + Math.floor(score);
+    // Stumble blink (no penalty, just a friendly flash)
+    if (stumbleTimer > 0) {
+      stumbleTimer -= dt;
+      hero.visible = stumbleTimer <= 0 ? true : (Math.floor(stumbleTimer * 10) % 2 === 0);
+    } else {
+      hero.visible = true;
+    }
+
+    scoreDisplay.textContent = 'Csillagok: ' + Math.floor(score);
+
+    // Round ends kindly after ROUND_SECONDS
+    if (elapsedTime >= ROUND_SECONDS) {
+      triggerGameOver();
+    }
   }
 
   function updateGameOver(dt) {
