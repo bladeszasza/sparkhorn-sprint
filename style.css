@@ -148,3 +148,5 @@ canvas { display: block; position: fixed; top: 0; left: 0; width: 100%; height: 
     font-size: 14px;
   }
 }
+
+#lives-display { font-size: 26px; margin-top: 2px; text-shadow: 0 0 6px #ff5d8f; letter-spacing: 3px; }

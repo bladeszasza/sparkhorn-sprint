@@ -4,6 +4,8 @@
    ============================================================= */
 (function () {
   'use strict';
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (ev) { document.addEventListener(ev, function (e) { e.preventDefault(); }, { passive: false }); });
+  document.addEventListener('touchmove', function (e) { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, { passive: false });
   var THREE = window.THREE;
 
   // ===================== TEXTURE DATA (Phase 5/21) =====================
@@ -822,6 +824,8 @@
   // ===================== HUD Elements =====================
   var hudTitle = document.getElementById('title');
   var scoreDisplay = document.getElementById('score-display');
+  var livesDisplay = document.getElementById('lives-display');
+  var gameoverHint = document.getElementById('gameover-hint');
   var hiScoreDisplay = document.getElementById('hiscore-display');
   var startOverlay = document.getElementById('start-overlay');
   var startBtn = document.getElementById('start-btn');
@@ -1427,6 +1431,8 @@
   var fadeTimer = 0;
   var isStarting = false;     // blocks double start during the fade
   var stumbleTimer = 0;       // >0 while briefly invulnerable after a bump
+  var lives = 3;              // három élet: minden ütközés egyet visz el, de nincs szigor, csak villogás
+  function updateLives() { var s = ''; for (var i = 0; i < 3; i++) s += i < lives ? '\u2764\uFE0F' : '\uD83E\uDD0D'; if (livesDisplay) livesDisplay.textContent = s; }
 
   // ===================== INPUT (discrete lane toggle) =====================
   window.addEventListener('keydown', function (e) {
@@ -1529,6 +1535,7 @@
       gameoverOverlay.style.display = 'none';
       scoreDisplay.textContent = 'Csillagok: 0';
       stumbleTimer = 0;
+      lives = 3; updateLives();
       hero.visible = true;
       isStarting = false;
       // Position hero for running - Z is ALWAYS 0
@@ -1606,10 +1613,18 @@
     setTimeout(function() { fadeEl.style.display = 'none'; }, 450);
   }
 
-  function triggerGameOver() {
+  function triggerGameOver(reason) {
     gameState = STATE.GAME_OVER;
     setHoveredPreview(-1);
-    playSFX('win');
+    if (reason === 'lives') {
+      playSFX('collectible');
+      gameoverText.textContent = 'Majdnem sikerült!';
+      gameoverHint.textContent = 'Próbáld újra, menni fog!';
+    } else {
+      playSFX('win');
+      gameoverText.textContent = 'Ügyes voltál!';
+      gameoverHint.textContent = 'Mindjárt választhatsz új unikornist…';
+    }
     updateMusicForState();
     hero.visible = true;
     if (score > highScore) {
@@ -1782,6 +1797,8 @@
         if (stumbleTimer <= 0) {
           // Gentle bump: no game over. Brief blink + hop, keep running.
           stumbleTimer = STUMBLE_SECONDS;
+          lives--; updateLives();
+          if (lives <= 0) { triggerGameOver('lives'); return; }
           playSFX('jump');
           if (isGrounded) { playerVelY = 6; isGrounded = false; }
         }
