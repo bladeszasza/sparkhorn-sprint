@@ -22,7 +22,10 @@
   <div id="start-content">
     <div id="start-title">SPARKHORN SPRINT</div>
     <div id="start-instructions">Koppints egy unikornisra, hogy kiválaszd &bull; Koppints jobbra vagy balra a sávváltáshoz &bull; Koppints középre vagy húzd felfelé az ugráshoz</div>
-    <button id="start-btn">JÁTÉK</button>
+    <div id="start-buttons">
+      <button id="start-btn">JÁTÉK</button>
+      <button id="start-say" title="Mondd el újra" aria-label="Mondd el újra">🔊</button>
+    </div>
   </div>
   <div id="selected-unicorn-label"></div>
 </div>
@@ -33,7 +36,8 @@
 </div>
 <div id="fade" style="display:none;"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- three.js r128 helyben (vendor/), így nem függ külső szolgáltatótól -->
+<script src="vendor/three.min.js"></script>
 <script src="textures_data.js"></script>
 <script src="main.js"></script>
 </body>

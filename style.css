@@ -66,6 +66,12 @@ canvas { display: block; position: fixed; top: 0; left: 0; width: 100%; height: 
   letter-spacing: 3px;
 }
 #start-btn:hover { background: linear-gradient(135deg, #c060f0, #7030b0); }
+#start-buttons { display: flex; align-items: center; justify-content: center; gap: 14px; width: 100%; }
+#start-say {
+  flex: none; width: 64px; height: 64px; border-radius: 50%; border: none; cursor: pointer;
+  font-size: 30px; line-height: 64px; background: rgba(255,255,255,0.88); box-shadow: 0 0 16px rgba(208,132,255,0.6);
+}
+#start-say:active, #start-btn:active { transform: scale(0.94); }
 
 #selected-unicorn-label {
   position: absolute;
@@ -135,7 +141,8 @@ canvas { display: block; position: fixed; top: 0; left: 0; width: 100%; height: 
   }
 
   #start-btn {
-    width: 100%;
+    flex: 1;
+    width: auto;
     max-width: 280px;
     padding: 14px 28px;
     font-size: 20px;

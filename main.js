@@ -618,57 +618,154 @@
   var COL_HALF = PHYSICS.collectibleHalf;
 
   // ===================== Audio (Web Audio – no file loading) =====================
-  var _audioCtx = null;
+  // Ugyanaz a lánc, mint a Csillagkertben: busz → hangerő → kompresszor → erősítés → limiter → kimenet,
+  // így a két játék egyformán hangos, és semmi nem torzít. A szülői hangerőt (Csillagkert, 3 fokozat) is követi.
+  var _audioCtx = null, _master = null, _sfxBus = null, _musicBus = null;
+  var LEVELS = [0.5, 0.8, 1.0];
+  function parentLevel() {
+    try { var v = localStorage.getItem('csillagkert_volume'); if (v !== null && +v >= 0 && +v <= 2) return LEVELS[+v | 0]; } catch (e) {}
+    return LEVELS[2];
+  }
+  function buildChain(ctx) {
+    _master = ctx.createGain(); _master.gain.value = parentLevel();
+    var comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -20; comp.knee.value = 12; comp.ratio.value = 5; comp.attack.value = 0.004; comp.release.value = 0.22;
+    var makeup = ctx.createGain(); makeup.gain.value = 1.7;
+    var limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -2; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.001; limiter.release.value = 0.1;
+    _master.connect(comp); comp.connect(makeup); makeup.connect(limiter); limiter.connect(ctx.destination);
+    _sfxBus = ctx.createGain(); _sfxBus.gain.value = 0.9; _sfxBus.connect(_master);
+    _musicBus = ctx.createGain(); _musicBus.gain.value = 1.0; _musicBus.connect(_master);
+  }
   function getAudioCtx() {
-    if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!_audioCtx) {
+      _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      buildChain(_audioCtx);
+    }
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}   // iOS: a néma kapcsoló mellett is szóljon
     if (_audioCtx.state === 'suspended') _audioCtx.resume();
     return _audioCtx;
+  }
+  // a kis hangszóró a mély hangot alig adja vissza: a mélyebb hang arányosan több erősítést kap
+  function loudnessFor(f) { return Math.max(1, Math.min(3, Math.pow(800 / f, 0.75))); }
+  // csengő hang felhangokkal: t = kezdés (mp-ben a mostanihoz képest), f0 → f1 csúszás
+  function chime(ctx, t, f0, f1, dur, vol, glide) {
+    var g = ctx.createGain(), peak = 0.3 * vol * loudnessFor(f1 || f0), t0 = ctx.currentTime + t;
+    g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(peak, t0 + 0.006);
+    g.gain.setTargetAtTime(0.0001, t0 + dur * 0.35, dur * 0.22);
+    g.connect(_sfxBus);
+    [[1, 1, 'triangle'], [2, 0.35, 'sine'], [3, 0.15, 'sine']].forEach(function (p) {
+      var o = ctx.createOscillator(), og = ctx.createGain(); o.type = p[2]; og.gain.value = p[1];
+      o.frequency.setValueAtTime(f0 * p[0], t0);
+      if (f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1 * p[0], t0 + (glide || dur * 0.5));
+      o.connect(og); og.connect(g); o.start(t0); o.stop(t0 + dur + 0.3);
+    });
+  }
+  // puha koppanás (ütközés): mély, gyorsan lecsengő szinusz + kis zaj
+  function thump(ctx, f, dur, vol) {
+    var t0 = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(f * 1.6, t0); o.frequency.exponentialRampToValueAtTime(f, t0 + 0.08);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.5 * vol, t0 + 0.005); g.gain.setTargetAtTime(0.0001, t0 + 0.03, dur * 0.3);
+    o.connect(g); g.connect(_sfxBus); o.start(t0); o.stop(t0 + dur + 0.2);
+    var len = Math.ceil(ctx.sampleRate * 0.05), b = ctx.createBuffer(1, len, ctx.sampleRate), d = b.getChannelData(0);
+    for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    var n = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), ng = ctx.createGain();
+    bp.type = 'lowpass'; bp.frequency.value = 900; ng.gain.value = 0.35 * vol;
+    n.buffer = b; n.connect(bp); bp.connect(ng); ng.connect(_sfxBus); n.start(t0);
   }
 
   function playSFX(type) {
     try {
       var ctx = getAudioCtx();
-      var osc = ctx.createOscillator();
-      var g = ctx.createGain();
-      osc.connect(g);
-      g.connect(ctx.destination);
-      if (type === 'jump') {
-        osc.type = 'triangle';
-        osc.frequency.value = 440;
-        g.gain.setValueAtTime(0.10, ctx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.08);
-      } else if (type === 'collectible') {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(660, ctx.currentTime);
-        osc.frequency.linearRampToValueAtTime(1100, ctx.currentTime + 0.10);
-        g.gain.setValueAtTime(0.08, ctx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.10);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.10);
-      } else if (type === 'win') {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(523, ctx.currentTime);
-        osc.frequency.setValueAtTime(659, ctx.currentTime + 0.12);
-        osc.frequency.setValueAtTime(784, ctx.currentTime + 0.24);
-        osc.frequency.setValueAtTime(1047, ctx.currentTime + 0.36);
-        g.gain.setValueAtTime(0.12, ctx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.6);
-      } else if (type === 'gameOver') {
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(220, ctx.currentTime);
-        osc.frequency.linearRampToValueAtTime(80, ctx.currentTime + 0.15);
-        g.gain.setValueAtTime(0.15, ctx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.15);
+      // A szintek a Csillagkert hangjaihoz mérve: a gyakori hang (ugrás, csillag) a kert csengésénél kicsit halkabb,
+      // a ritka ünnepi hang sem hangosabb annál.
+      if (type === 'jump') {                       // "boing": felfelé csúszó, rugós hang
+        chime(ctx, 0, 330, 660, 0.24, 0.42, 0.11);
+      } else if (type === 'collectible') {         // csillag: két csilingelő hang
+        chime(ctx, 0, 1047, 0, 0.2, 0.5);
+        chime(ctx, 0.07, 1568, 0, 0.3, 0.45);
+      } else if (type === 'bump') {                // ütközés: puha koppanás, nem ijesztő
+        thump(ctx, 150, 0.22, 0.34);
+      } else if (type === 'win') {                 // kör vége: vidám, felfelé lépő dallam
+        [523, 659, 784, 1047].forEach(function (f, i) { chime(ctx, i * 0.13, f, 0, i === 3 ? 0.55 : 0.24, 0.26); });
+      } else if (type === 'gameOver') {            // elfogytak a szívek: kedves, lefelé lépő két hang (nem berregés)
+        chime(ctx, 0, 659, 0, 0.3, 0.26);
+        chime(ctx, 0.22, 523, 0, 0.45, 0.26);
       }
     } catch (e) {}
   }
 
+  // ===================== Beszéd (a gyerek még nem olvas) =====================
+  // Rövid mondatok, magyar hangon. A Csillagkert eszköz-beállításait követi (hangválasztás, beszéd hangereje).
+  // Ha nincs magyar hang, nem mond semmit: a játék képből is érthető. Magától legfeljebb 8 mp-enként szól.
+  var SPEECH_VOL = [0.6, 0.8, 1.0];
+  function parentDevice() {
+    try { return JSON.parse(localStorage.getItem('csillagkert:device') || '{}') || {}; } catch (e) { return {}; }
+  }
+  function voiceQuality(v) {
+    var n = (v.name || '') + ' ' + (v.voiceURI || '');
+    return (/premium|prémium/i.test(n) ? 4 : 0) + (/enhanced|továbbfejlesztett|javított/i.test(n) ? 2 : 0) + (v.localService ? 1 : 0) - (/compact/i.test(n) ? 1 : 0);
+  }
+  function huVoice() {
+    if (!('speechSynthesis' in window)) return null;
+    var hu = window.speechSynthesis.getVoices().filter(function (v) { return /^hu/i.test(v.lang || ''); });
+    if (!hu.length) return null;
+    var saved = parentDevice().voiceURI;
+    for (var i = 0; i < hu.length; i++) if (saved && hu[i].voiceURI === saved) return hu[i];
+    hu.sort(function (a, b) { return voiceQuality(b) - voiceQuality(a); });
+    return hu[0];
+  }
+  var lastSpoken = 0;
+  window.__sparkhornSpoken = [];                   // tesztekhez: mit mondott (csak a szöveg)
+  // mode: 'tap' = a gyerek koppintására (azonnal, az előzőt félbeszakítja), 'event' = fontos pillanat (kör vége),
+  // nincs = magától szól, legfeljebb 8 mp-enként
+  function speak(text, mode) {
+    var now = Date.now(), force = mode === 'tap';
+    if (!mode && now - lastSpoken < 8000) return;
+    if (!('speechSynthesis' in window)) return;
+    var go = function () {
+      var v = huVoice(); if (!v) return;
+      try {
+        var u = new SpeechSynthesisUtterance(text);
+        u.voice = v; u.lang = v.lang || 'hu-HU'; u.rate = 0.85; u.pitch = 1.1;
+        var sv = parentDevice().speechVol; u.volume = SPEECH_VOL[sv === undefined ? 1 : sv] || 0.8;
+        if (force) window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(u);
+        lastSpoken = now; window.__sparkhornSpoken.push(text);
+      } catch (e) {}
+    };
+    // a hangok listája az első betöltéskor még üres lehet: megvárjuk (legfeljebb 1,5 mp)
+    if (window.speechSynthesis.getVoices().length) go();
+    else {
+      var done = false, once = function () { if (done) return; done = true; go(); };
+      try { window.speechSynthesis.addEventListener('voiceschanged', once, { once: true }); } catch (e) {}
+      setTimeout(once, 1500);
+    }
+  }
+  // számok betűvel (a felolvasó a számjegyet néha furcsán mondja): 0–999; attr = jelzői alak ("két csillag")
+  function numHu(n, attr) {
+    var ones = ['', 'egy', 'kettő', 'három', 'négy', 'öt', 'hat', 'hét', 'nyolc', 'kilenc'];
+    var tens = ['', 'tíz', 'húsz', 'harminc', 'negyven', 'ötven', 'hatvan', 'hetven', 'nyolcvan', 'kilencven'];
+    var tensPre = ['', 'tizen', 'huszon', 'harminc', 'negyven', 'ötven', 'hatvan', 'hetven', 'nyolcvan', 'kilencven'];
+    n = Math.max(0, Math.min(999, Math.floor(n)));
+    if (n === 0) return 'nulla';
+    var h = Math.floor(n / 100), t = Math.floor((n % 100) / 10), o = n % 10, s = '';
+    if (h) s += (h === 1 ? '' : (h === 2 ? 'két' : ones[h])) + 'száz';
+    if (t) s += o ? tensPre[t] : tens[t];
+    if (o) s += ones[o];
+    return attr ? s.replace(/kettő$/, 'két') : s;
+  }
+  var LINES = {
+    intro: 'Válassz egy unikornist! Aztán koppints a Játék gombra!',
+    howto: 'Koppints oldalra, és sávot vált. Középre koppintva ugrik!'
+  };
+  function starsLine(n) {
+    if (n <= 0) return '';
+    var w = numHu(n, true);
+    return w.charAt(0).toUpperCase() + w.slice(1) + ' csillagot gyűjtöttél. ';
+  }
+
+  var MUSIC_MIX = { playing: 0.24, over: 0.12, showcase: 0.16 };
   var MUSIC_BPM = 112;
   var MUSIC_LOOKAHEAD = 0.22;
   var musicMasterGain = null;
@@ -763,7 +860,7 @@
     if (!musicMasterGain) {
       musicMasterGain = ctx.createGain();
       musicMasterGain.gain.value = 0.0001;
-      musicMasterGain.connect(ctx.destination);
+      musicMasterGain.connect(_musicBus);
     }
 
     if (musicSchedulerId) return;
@@ -785,12 +882,13 @@
   function updateMusicForState() {
     if (!musicMasterGain) return;
 
+    // a zene a hangeffektek alatt marad (azok jelzik, mi történt), de az iPad hangszóróján is hallható
     if (gameState === STATE.PLAYING) {
-      setMusicMix(0.085);
+      setMusicMix(MUSIC_MIX.playing);
     } else if (gameState === STATE.GAME_OVER) {
-      setMusicMix(0.045);
+      setMusicMix(MUSIC_MIX.over);
     } else {
-      setMusicMix(0.055);
+      setMusicMix(MUSIC_MIX.showcase);
     }
   }
 
@@ -1075,6 +1173,7 @@
     var wasVisible = hero.visible;
 
     scene.remove(hero);
+    disposeTree(hero);
     hero = buildHero(getUnicornPalette(selectedUnicornIndex));
     scene.add(hero);
     hero.position.set(heroX, heroY, heroZ);
@@ -1365,15 +1464,17 @@
   var tileOriginalZ = [];
 
   function createTile(zPos) {
-    var tileGroup = buildPlatformTile();
+    var tileGroup = fromTemplate('tile', buildPlatformTile);
     tileGroup.position.set(0, -0.04, zPos);
     scene.add(tileGroup);
     return tileGroup;
   }
 
+  // A csempék egyszer készülnek el; új körben csak visszaállnak a helyükre
   function initTiles() {
-    for (var t = 0; t < tiles.length; t++) {
-      scene.remove(tiles[t]);
+    if (tiles.length === TILE.count) {
+      for (var k = 0; k < tiles.length; k++) tiles[k].position.z = tileOriginalZ[k];
+      return;
     }
     tiles = [];
     tileOriginalZ = [];
@@ -1391,14 +1492,29 @@
 
   function laneX(lane) { return (lane - 1) * PHYSICS.laneWidth; }
 
+  // Minta-készlet: minden fajtából egyszer épül geometria és anyag, a pályára kerülő példány csak egy
+  // könnyű másolat, ami ugyanazokat használja (a clone() megosztja őket). Így a körök során nem gyűlik a memória.
+  var TEMPLATES = {};
+  function fromTemplate(key, build) {
+    if (!TEMPLATES[key]) TEMPLATES[key] = build();
+    return TEMPLATES[key].clone();
+  }
+  // Egy saját (nem megosztott) modell teljes felszabadítása – az unikornis cseréjekor
+  function disposeTree(root) {
+    root.traverse(function (o) {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m.map) m.map.dispose(); m.dispose(); });
+    });
+  }
+
   function spawnObstacle(lane, z, isAerial) {
     var mesh;
     if (isAerial) {
-      mesh = buildObstacleAerial();
+      mesh = fromTemplate('aerial', buildObstacleAerial);
       mesh.position.set(laneX(lane), PHYSICS.aerialObstacleY, z);
       mesh.userData.isAerial = true;
     } else {
-      mesh = buildObstacleGround();
+      mesh = fromTemplate('ground', buildObstacleGround);
       mesh.position.set(laneX(lane), PHYSICS.groundObstacleY, z);
       mesh.userData.isAerial = false;
     }
@@ -1407,7 +1523,7 @@
   }
 
   function spawnCollectibleAt(lane, z) {
-    var mesh = buildCollectible();
+    var mesh = fromTemplate('star', buildCollectible);
     mesh.position.set(laneX(lane), PHYSICS.collectibleY, z);
     scene.add(mesh);
     collectibles.push(mesh);
@@ -1461,6 +1577,11 @@
       if (gameState === STATE.SHOWCASE) startGame();
     });
   }
+  var sayBtn = document.getElementById('start-say');
+  if (sayBtn) sayBtn.addEventListener('click', function () {
+    getAudioCtx();
+    speak(LINES.intro + ' ' + LINES.howto, 'tap');
+  });
 
   // ===================== TOUCH / PEN CONTROLS =====================
   // Tap left/right third = change lane, tap middle = jump,
@@ -1513,6 +1634,7 @@
     isStarting = true;
     getAudioCtx();
     ensureBackgroundMusicStarted();
+    speak(LINES.howto, 'tap');
     setHoveredPreview(-1);
     // Fade out overlay
     fadeEl.style.display = 'block';
@@ -1611,19 +1733,24 @@
     updateSelectedUnicornLabel();
     fadeEl.style.opacity = '0';
     setTimeout(function() { fadeEl.style.display = 'none'; }, 450);
+    if (!introSaid) { introSaid = true; speak(LINES.intro); }   // csak az első alkalommal; a kör végén már szólt
   }
+  var introSaid = false;
 
   function triggerGameOver(reason) {
     gameState = STATE.GAME_OVER;
     setHoveredPreview(-1);
+    var got = Math.floor(score);
     if (reason === 'lives') {
-      playSFX('collectible');
+      playSFX('gameOver');
       gameoverText.textContent = 'Majdnem sikerült!';
       gameoverHint.textContent = 'Próbáld újra, menni fog!';
+      speak('Majdnem sikerült! ' + starsLine(got) + 'Próbáld újra, menni fog!', 'event');
     } else {
       playSFX('win');
       gameoverText.textContent = 'Ügyes voltál!';
       gameoverHint.textContent = 'Mindjárt választhatsz új unikornist…';
+      speak((got > 0 ? 'Ügyes voltál! ' : 'Szép futás volt! ') + starsLine(got) + 'Fussunk még egyet?', 'event');
     }
     updateMusicForState();
     hero.visible = true;
@@ -1798,8 +1925,8 @@
           // Gentle bump: no game over. Brief blink + hop, keep running.
           stumbleTimer = STUMBLE_SECONDS;
           lives--; updateLives();
+          playSFX('bump');
           if (lives <= 0) { triggerGameOver('lives'); return; }
-          playSFX('jump');
           if (isGrounded) { playerVelY = 6; isGrounded = false; }
         }
         scene.remove(ob);
@@ -1927,6 +2054,26 @@
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
+
+  // ===================== KAPASZKODÓ (Csillagkert és tesztek) =====================
+  // busy(): fut-e éppen egy kör – a Csillagkert jutalomideje ezt kivárja, mielőtt szelíden hazaküld.
+  window.__sparkhorn = {
+    busy: function () { return isStarting || gameState === STATE.PLAYING || gameState === STATE.GAME_OVER; },
+    state: function () { return gameState; },
+    memory: function () { return { geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, calls: renderer.info.render.calls }; },
+    playSFX: playSFX,
+    start: startGame,
+    select: setSelectedUnicorn,
+    endRound: function (reason) { if (gameState === STATE.PLAYING) triggerGameOver(reason); },
+    // a kör léptetése képkockák nélkül; safe: az akadály nem visz el szívet (memória-mérés hosszú futáshoz)
+    tick: function (sec, safe) {
+      var dt = 1 / 30;
+      for (var t = 0; t < sec && gameState === STATE.PLAYING; t += dt) { if (safe) stumbleTimer = Math.max(stumbleTimer, 0.5); updatePlaying(dt, performance.now()); }
+      renderer.render(scene, camera);
+      return { obstacles: obstacles.length, stars: collectibles.length, score: score, elapsed: elapsedTime };
+    },
+    audio: function () { getAudioCtx(); return { ctx: _audioCtx, sfx: _sfxBus, music: _musicBus, master: _master }; }
+  };
 
   // ===================== START =====================
   enterShowcase();
