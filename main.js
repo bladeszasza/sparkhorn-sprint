@@ -189,6 +189,26 @@
     }
   ];
 
+  // „Az én unikornisom": ha a gyerek a Csillagkertből indította a futást, ott a saját unikornisa színei a közös
+  // `csillagkert_avatar` kulcsban vannak (csak színek, név nélkül). Csak ellenőrzött adattal kerül a sor elejére;
+  // ha nincs vagy hibás, minden a régi.
+  var OWN_ID = 'own';
+  function readOwnUnicorn() {
+    try {
+      var d = JSON.parse(localStorage.getItem('csillagkert_avatar') || 'null');
+      var hex = function (c) { return typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c) ? parseInt(c.slice(1), 16) : null; };
+      if (!d || d.v !== 1 || !Array.isArray(d.mane) || d.mane.length !== 5) return null;
+      var u = { name: 'Az én unikornisom', body: hex(d.body), legs: hex(d.legs), horn: hex(d.horn), tail: hex(d.tail), eyes: hex(d.eyes), ears: hex(d.ears), mane: d.mane.map(hex) };
+      if ([u.body, u.legs, u.horn, u.tail, u.eyes, u.ears].concat(u.mane).some(function (c) { return c === null; })) return null;
+      u.particleMode = 'sparkle'; u.particleSize = 0.14; u.particleColors = [u.horn, u.mane[0], u.mane[2], 0xfff2a8]; u.own = true;
+      return u;
+    } catch (err) { return null; }
+  }
+  var OWN_UNICORN = readOwnUnicorn();
+  if (OWN_UNICORN) UNICORN_ROSTER.unshift(OWN_UNICORN);
+  var OWN_OFFSET = OWN_UNICORN ? 1 : 0;
+  var PREVIEW_FIT = Math.min(1, 5 / Math.max(1, UNICORN_ROSTER.length - 1));   // hat unikornisnál 1 (a régi elrendezés)              // a mentett választás a régi sorrend szerinti szám (vagy 'own')
+
   function clampUnicornIndex(index) {
     if (index < 0) return 0;
     if (index >= UNICORN_ROSTER.length) return UNICORN_ROSTER.length - 1;
@@ -896,9 +916,12 @@
   var HISCORE_KEY = 'sparkhorn_sprint_best_stars';
   var SELECTED_UNICORN_KEY = 'sparkhorn_sprint_selected_unicorn';
 
+  // Még nem választott: az első (a saját unikornis, ha van). A régi mentett szám ugyanazt az unikornist jelenti, mint eddig.
   function loadStoredUnicornIndex() {
     try {
-      return clampUnicornIndex(parseInt(localStorage.getItem(SELECTED_UNICORN_KEY) || '0', 10) || 0);
+      var v = localStorage.getItem(SELECTED_UNICORN_KEY);
+      if (v === null || v === OWN_ID) return 0;
+      return clampUnicornIndex((parseInt(v, 10) || 0) + OWN_OFFSET);
     } catch (err) {
       return 0;
     }
@@ -906,7 +929,8 @@
 
   function storeSelectedUnicornIndex(index) {
     try {
-      localStorage.setItem(SELECTED_UNICORN_KEY, '' + clampUnicornIndex(index));
+      index = clampUnicornIndex(index);
+      localStorage.setItem(SELECTED_UNICORN_KEY, OWN_OFFSET && index === 0 ? OWN_ID : '' + (index - OWN_OFFSET));
     } catch (err) {}
   }
 
@@ -1148,7 +1172,8 @@
     previewUnicorn.userData.previewBaseY = previewUnicorn.position.y;
     slot.add(previewUnicorn);
 
-    slot.position.set(offset * 1.78, -0.12 + Math.abs(offset) * 0.04, 1.35 + Math.abs(offset) * 0.24);
+    var fx = offset * PREVIEW_FIT;                     // hét unikornisnál (a sajáttal) kicsit sűrűbben állnak, hogy mind látsszon
+    slot.position.set(fx * 1.78, -0.12 + Math.abs(fx) * 0.04, 1.35 + Math.abs(fx) * 0.24);
     slot.rotation.y = offset * -0.08;
     slot.userData.ring = ring;
     slot.userData.previewUnicorn = previewUnicorn;
@@ -1196,6 +1221,10 @@
 
   function updatePreviewPresentation(dt, timeSeconds) {
     if (!showcasePreviewGroup.visible) return;
+    // keskeny (álló) képernyőn nem fér ki a sor: a kiválasztott unikornis a közepére csúszik, a szomszédja megkoppintható
+    var narrow = Math.max(0, Math.min(1, (1.44 - camera.aspect) / 0.6));
+    var chosenSlot = previewSlots[selectedUnicornIndex], groupX = chosenSlot ? -chosenSlot.position.x * narrow : 0;
+    showcasePreviewGroup.position.x += (groupX - showcasePreviewGroup.position.x) * Math.min(1, dt * 6);
 
     for (var i = 0; i < previewSlots.length; i++) {
       var slot = previewSlots[i];
@@ -1204,12 +1233,12 @@
       var phaseTime = timeSeconds + slot.userData.phaseOffset;
       var isSelected = i === selectedUnicornIndex;
       var isHovered = i === hoveredPreviewIndex;
-      var targetScale = isSelected ? 1.08 : 1.0;
+      var targetScale = (isSelected ? 1.08 : 1.0) * PREVIEW_FIT;
       var targetOpacity = isSelected ? 0.95 : 0.16;
       var targetColor = 0xe7c26b;
 
       if (isHovered) {
-        targetScale += 0.08;
+        targetScale += 0.08 * PREVIEW_FIT;
         if (!isSelected) targetOpacity = 0.4;
         targetColor = 0xffeb9a;
       }

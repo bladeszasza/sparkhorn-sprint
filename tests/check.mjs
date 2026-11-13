@@ -1,4 +1,4 @@
-// Sparkhorn-ellenőrzés fej nélküli Chrome-ban (Node 22+): külső kérések, beszéd, hangerő (régi képlet vs. új lánc), memória, busy().
+// Sparkhorn-ellenőrzés fej nélküli Chrome-ban (Node 22+): külső kérések, beszéd, hangerő (régi képlet vs. új lánc), memória, busy(), az én unikornisom.
 // Használat: előbb egy helyi szerver a repó gyökerére (pl. 8125-ös port), aztán: node tests/check.mjs [url] [--gpu]
 // A Chrome helye a CHROME környezeti változóval adható meg.
 import { spawn } from 'node:child_process';
@@ -137,6 +137,20 @@ try {
   }
   if (!out) { console.log('IDŐTÚLLÉPÉS'); process.exitCode = 2; }
   else {
+    // „az én unikornisom": a Csillagkert átadott színeivel a sor elején áll és ő a kiválasztott; hibás adattal minden a régi
+    const label = async setup => {
+      await send('Runtime.evaluate', { expression: 'localStorage.clear(); ' + setup + '; true' }); await send('Page.reload', {}); await sleep(2500);
+      return (await send('Runtime.evaluate', { expression: "document.getElementById('selected-unicorn-label').textContent", returnByValue: true })).result?.result?.value || '';
+    };
+    const OWN = JSON.stringify({ v: 1, body: '#d6e6ff', legs: '#c3cdec', horn: '#ff5d5d', tail: '#ff5d5d', mane: ['#ff5d5d', '#ffb020', '#ffe14d', '#4cc38a', '#4a7dff'], ears: '#ffc0e0', eyes: '#382c6e' });
+    const setOwn = 'localStorage.setItem("csillagkert_avatar", ' + JSON.stringify(OWN) + ')';
+    const L = {
+      own: await label(setOwn),
+      ownOld: await label(setOwn + '; localStorage.setItem("sparkhorn_sprint_selected_unicorn", "2")'),
+      bad: await label('localStorage.setItem("csillagkert_avatar", ' + JSON.stringify(JSON.stringify({ v: 1, body: 'red' })) + ')'),
+      none: await label(''),
+    };
+    out.push({ name: 'az én unikornisom: a Csillagkert színeivel elöl áll; a régi választás és a hibás adat nem ront el semmit', pass: /Az én unikornisom/.test(L.own) && /Frostfeather/.test(L.ownOld) && /Starbloom/.test(L.bad) && /Starbloom/.test(L.none), info: JSON.stringify(L) });
     const host = new URL(url).host;
     const ext = requests.filter(u => !u.startsWith('data:') && !u.startsWith('blob:') && new URL(u).host !== host);
     out.unshift({ name: 'nincs külső kérés (three.js helyből)', pass: ext.length === 0, info: ext.join(', ') || `${requests.length} kérés, mind a saját címről` });
